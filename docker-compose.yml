@@ -1,0 +1,24 @@
+# Documented deployment path: Postgres 16 + pgvector.
+# On the current dev machine we run against the local Homebrew PostgreSQL 15 instead,
+# so this file is optional for local dev but is the portable/production reference.
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: maridata-db
+    environment:
+      POSTGRES_USER: maridata
+      POSTGRES_PASSWORD: maridata
+      POSTGRES_DB: maridata
+    ports:
+      - "5432:5432"
+    volumes:
+      - maridata_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U maridata -d maridata"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    shm_size: "1gb"
+
+volumes:
+  maridata_pgdata:

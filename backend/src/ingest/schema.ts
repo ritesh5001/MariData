@@ -1,0 +1,152 @@
+// Canonical mapping between the source TSV and the typed `persons` table.
+// STAGING_COLUMNS is the EXACT physical order of the TSV (and of persons_staging), so a
+// positional COPY works. COLUMN_MAP describes how each staging column casts into persons.
+
+export const STAGING_COLUMNS = [
+  "person_name",
+  "person_first_name_unanalyzed",
+  "person_last_name_unanalyzed",
+  "person_name_unanalyzed_downcase",
+  "person_title",
+  "person_functions",
+  "person_seniority",
+  "person_email_status_cd",
+  "person_extrapolated_email_confidence",
+  "person_email",
+  "person_phone",
+  "person_sanitized_phone",
+  "person_email_analyzed",
+  "person_linkedin_url",
+  "person_detailed_function",
+  "person_title_normalized",
+  "primary_title_normalized_for_faceting",
+  "sanitized_organization_name_unanalyzed",
+  "person_location_city",
+  "person_location_city_with_state_or_country",
+  "person_location_state",
+  "person_location_state_with_country",
+  "person_location_country",
+  "person_location_postal_code",
+  "job_start_date",
+  "current_organization_ids",
+  "modality",
+  "prospected_by_team_ids",
+  "person_excluded_by_team_ids",
+  "relavence_boost",
+  "person_num_linkedin_connections",
+  "person_location_geojson",
+  "predictive_scores",
+  "person_vacuumed_at",
+  "random",
+  "src_index",
+  "src_type",
+  "src_id",
+  "src_score",
+] as const;
+
+// The original TSV header names (what we expect to see in row 1), in order. Used by the
+// preview endpoint to confirm a file matches before importing.
+export const TSV_HEADER = [
+  "person_name",
+  "person_first_name_unanalyzed",
+  "person_last_name_unanalyzed",
+  "person_name_unanalyzed_downcase",
+  "person_title",
+  "person_functions",
+  "person_seniority",
+  "person_email_status_cd",
+  "person_extrapolated_email_confidence",
+  "person_email",
+  "person_phone",
+  "person_sanitized_phone",
+  "person_email_analyzed",
+  "person_linkedin_url",
+  "person_detailed_function",
+  "person_title_normalized",
+  "primary_title_normalized_for_faceting",
+  "sanitized_organization_name_unanalyzed",
+  "person_location_city",
+  "person_location_city_with_state_or_country",
+  "person_location_state",
+  "person_location_state_with_country",
+  "person_location_country",
+  "person_location_postal_code",
+  "job_start_date",
+  "current_organization_ids",
+  "modality",
+  "prospected_by_team_ids",
+  "person_excluded_by_team_ids",
+  "relavence_boost",
+  "person_num_linkedin_connections",
+  "person_location_geojson",
+  "predictive_scores",
+  "person_vacuumed_at",
+  "random",
+  "_index",
+  "_type",
+  "_id",
+  "_score",
+] as const;
+
+export interface ColumnMapEntry {
+  // target column in persons
+  target: string;
+  // SQL expression over persons_staging that produces the typed value
+  expr: string;
+}
+
+// NULLIF(btrim(x),'') for plain text so empty/whitespace becomes NULL.
+const t = (col: string) => `NULLIF(btrim(${col}), '')`;
+
+export const COLUMN_MAP: ColumnMapEntry[] = [
+  { target: "person_name", expr: t("person_name") },
+  { target: "person_first_name", expr: t("person_first_name_unanalyzed") },
+  { target: "person_last_name", expr: t("person_last_name_unanalyzed") },
+  { target: "person_name_downcase", expr: t("person_name_unanalyzed_downcase") },
+  { target: "person_title", expr: t("person_title") },
+  { target: "person_functions", expr: "maridata_parse_text_array(person_functions)" },
+  { target: "person_seniority", expr: t("person_seniority") },
+  { target: "person_email_status", expr: t("person_email_status_cd") },
+  { target: "email_confidence", expr: "maridata_to_real(person_extrapolated_email_confidence)" },
+  { target: "person_email", expr: t("person_email") },
+  { target: "person_phone", expr: t("person_phone") },
+  { target: "person_sanitized_phone", expr: t("person_sanitized_phone") },
+  { target: "person_email_analyzed", expr: t("person_email_analyzed") },
+  { target: "person_linkedin_url", expr: t("person_linkedin_url") },
+  { target: "person_detailed_function", expr: t("person_detailed_function") },
+  { target: "person_title_normalized", expr: t("person_title_normalized") },
+  { target: "primary_title_faceting", expr: t("primary_title_normalized_for_faceting") },
+  { target: "organization_name", expr: t("sanitized_organization_name_unanalyzed") },
+  { target: "current_organization_ids", expr: "maridata_parse_text_array(current_organization_ids)" },
+  { target: "location_city", expr: t("person_location_city") },
+  { target: "location_city_full", expr: t("person_location_city_with_state_or_country") },
+  { target: "location_state", expr: t("person_location_state") },
+  { target: "location_state_full", expr: t("person_location_state_with_country") },
+  { target: "location_country", expr: t("person_location_country") },
+  { target: "location_postal_code", expr: t("person_location_postal_code") },
+  { target: "location_geojson", expr: "maridata_to_jsonb(person_location_geojson)" },
+  { target: "job_start_date", expr: "maridata_to_date(job_start_date)" },
+  { target: "modality", expr: t("modality") },
+  { target: "prospected_by_team_ids", expr: "maridata_parse_text_array(prospected_by_team_ids)" },
+  { target: "excluded_by_team_ids", expr: "maridata_parse_text_array(person_excluded_by_team_ids)" },
+  { target: "relevance_boost", expr: "maridata_to_real(relavence_boost)" },
+  { target: "num_linkedin_connections", expr: "maridata_to_int(person_num_linkedin_connections)" },
+  { target: "predictive_scores", expr: "maridata_to_jsonb(predictive_scores)" },
+  { target: "person_vacuumed_at", expr: "maridata_to_timestamptz(person_vacuumed_at)" },
+  { target: "random", expr: "maridata_to_real(random)" },
+  { target: "source_index", expr: t("src_index") },
+  { target: "source_type", expr: t("src_type") },
+  { target: "external_id", expr: t("src_id") },
+  { target: "source_score", expr: "maridata_to_real(src_score)" },
+];
+
+// Columns whose cast can fail on dirty data — checked by the quarantine pass.
+// staging = source staging column; cast = the guarded expression that yields NULL on failure.
+export const QUARANTINE_CHECKS: { column: string; staging: string; cast: string }[] = [
+  { column: "location_geojson", staging: "person_location_geojson", cast: "maridata_to_jsonb(person_location_geojson)" },
+  { column: "predictive_scores", staging: "predictive_scores", cast: "maridata_to_jsonb(predictive_scores)" },
+  { column: "job_start_date", staging: "job_start_date", cast: "maridata_to_date(job_start_date)" },
+  { column: "person_vacuumed_at", staging: "person_vacuumed_at", cast: "maridata_to_timestamptz(person_vacuumed_at)" },
+  { column: "num_linkedin_connections", staging: "person_num_linkedin_connections", cast: "maridata_to_int(person_num_linkedin_connections)" },
+  { column: "email_confidence", staging: "person_extrapolated_email_confidence", cast: "maridata_to_real(person_extrapolated_email_confidence)" },
+];
