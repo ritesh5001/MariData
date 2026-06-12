@@ -34,15 +34,20 @@ export interface PersonsPage {
 
 export type SearchMode = "fts" | "fuzzy";
 
-export function usePersonsInfinite(q: string, mode: SearchMode) {
+export function usePersonsInfinite(
+  q: string,
+  mode: SearchMode,
+  filterJson: string | null = null
+) {
   return useInfiniteQuery({
-    queryKey: ["persons", q, mode],
+    queryKey: ["persons", q, mode, filterJson],
     queryFn: ({ pageParam }) => {
       const params = new URLSearchParams({ limit: "100" });
       if (q) {
         params.set("q", q);
         params.set("mode", mode);
       }
+      if (filterJson) params.set("filter", filterJson);
       if (pageParam != null) params.set("cursor", String(pageParam));
       return api<PersonsPage>(`/api/persons?${params}`);
     },

@@ -14,6 +14,16 @@ import {
   type SearchMode,
 } from "../api/persons";
 import PersonDrawer from "../components/PersonDrawer";
+import FilterBuilder from "../components/FilterBuilder";
+import FacetPanel from "../components/FacetPanel";
+import SegmentBar from "../components/SegmentBar";
+import {
+  emptyGroup,
+  fromWire,
+  toWire,
+  type FilterGroup,
+  type FilterCondition,
+} from "../filters/filterModel";
 
 const col = createColumnHelper<PersonRow>();
 
@@ -48,6 +58,8 @@ export default function Browse() {
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [showColumns, setShowColumns] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [filterTree, setFilterTree] = useState<FilterGroup>(emptyGroup());
+  const [showFilters, setShowFilters] = useState(false);
 
   // Debounce the search box so we do not hit the API per keystroke.
   useEffect(() => {
@@ -55,7 +67,20 @@ export default function Browse() {
     return () => clearTimeout(t);
   }, [input]);
 
-  const query = usePersonsInfinite(q, mode);
+  // Serialized wire filter; null when the tree has no complete conditions.
+  const wireFilter = useMemo(() => toWire(filterTree), [filterTree]);
+  const filterJson = useMemo(
+    () => (wireFilter ? JSON.stringify(wireFilter) : null),
+    [wireFilter]
+  );
+
+  function addFacetCondition(field: string, operator: string, value: string) {
+    const cond: FilterCondition = { kind: "condition", field, operator, value };
+    setFilterTree((t) => ({ ...t, conditions: [...t.conditions, cond] }));
+    setShowFilters(true);
+  }
+
+  const query = usePersonsInfinite(q, mode, filterJson);
   const rows = useMemo(
     () => query.data?.pages.flatMap((p) => p.rows) ?? [],
     [query.data]
@@ -131,6 +156,25 @@ export default function Browse() {
           ))}
         </div>
 
+        <button
+          onClick={() => setShowFilters((s) => !s)}
+          className={`rounded-md border px-3 py-1.5 text-sm ${
+            wireFilter
+              ? "border-accent bg-accent/10 font-medium text-accent"
+              : "border-slate-300 text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          Filters{wireFilter ? " (active)" : ""}
+        </button>
+        {wireFilter && (
+          <button
+            onClick={() => setFilterTree(emptyGroup())}
+            className="text-xs text-slate-400 hover:text-red-600"
+          >
+            clear
+          </button>
+        )}
+
         <div className="relative ml-auto">
           <button
             onClick={() => setShowColumns((s) => !s)}
@@ -158,10 +202,30 @@ export default function Browse() {
         </div>
       </div>
 
-      <div
-        ref={scrollRef}
-        className="flex-1 overflow-auto rounded-lg border border-slate-200 bg-white"
-      >
+      {showFilters && (
+        <div className="mb-3 space-y-2">
+          <SegmentBar
+            currentFilter={wireFilter}
+            onLoad={(cfg) => {
+              setFilterTree(fromWire(cfg));
+              setShowFilters(true);
+            }}
+          />
+          <FilterBuilder group={filterTree} onChange={setFilterTree} depth={0} />
+        </div>
+      )}
+
+      <div className="flex min-h-0 flex-1 gap-3">
+        <FacetPanel
+          filterJson={filterJson}
+          q={q}
+          mode={mode}
+          onAddCondition={addFacetCondition}
+        />
+        <div
+          ref={scrollRef}
+          className="min-w-0 flex-1 overflow-auto rounded-lg border border-slate-200 bg-white"
+        >
         <table className="w-full border-collapse text-sm" style={{ tableLayout: "fixed" }}>
           <thead className="sticky top-0 z-10 bg-slate-50">
             {table.getHeaderGroups().map((hg) => (
@@ -220,9 +284,12 @@ export default function Browse() {
         )}
         {!query.isLoading && rows.length === 0 && !query.isError && (
           <div className="p-8 text-center text-sm text-slate-400">
-            {q ? "No people match this search." : "No data yet — run an import first."}
+            {q || wireFilter
+              ? "No people match this search/filter."
+              : "No data yet — run an import first."}
           </div>
         )}
+        </div>
       </div>
 
       <div className="mt-2 text-xs text-slate-400">
