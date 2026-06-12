@@ -1,6 +1,6 @@
 # PHASE 5 — CRUD, Dedup & Bulk ops
 
-**Status:** ⏳ pending
+**Status:** ✅ complete — 2026-06-12
 
 ---
 

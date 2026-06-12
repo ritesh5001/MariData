@@ -5,7 +5,7 @@ const nav = [
   { to: "/", label: "Dashboard", end: true },
   { to: "/import", label: "Import" },
   { to: "/browse", label: "Browse" },
-  { to: "/segments", label: "Segments" },
+  { to: "/dedup", label: "Dedup" },
 ];
 
 export default function AppLayout() {

@@ -17,6 +17,7 @@ import PersonDrawer from "../components/PersonDrawer";
 import FilterBuilder from "../components/FilterBuilder";
 import FacetPanel from "../components/FacetPanel";
 import SegmentBar from "../components/SegmentBar";
+import BulkToolbar from "../components/BulkToolbar";
 import {
   emptyGroup,
   fromWire,
@@ -212,6 +213,7 @@ export default function Browse() {
             }}
           />
           <FilterBuilder group={filterTree} onChange={setFilterTree} depth={0} />
+          <BulkToolbar wireFilter={wireFilter} total={total} />
         </div>
       )}
 

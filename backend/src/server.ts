@@ -9,6 +9,8 @@ import { importRouter } from "./routes/import.js";
 import { personsRouter } from "./routes/persons.js";
 import { facetsRouter } from "./routes/facets.js";
 import { segmentsRouter } from "./routes/segments.js";
+import { dedupRouter } from "./routes/dedup.js";
+import { bulkRouter } from "./routes/bulk.js";
 
 const app = express();
 
@@ -42,6 +44,8 @@ api.use(importRouter);
 api.use(personsRouter);
 api.use(facetsRouter);
 api.use(segmentsRouter);
+api.use(dedupRouter);
+api.use(bulkRouter);
 app.use("/api", api);
 
 app.listen(config.port, () => {

@@ -10,6 +10,11 @@ import {
   filterConfigToWhereClause,
   FilterError,
 } from "../search/filterConfigToWhereClause.js";
+import {
+  EDITABLE_FIELDS,
+  EditError,
+  coerceEditValue,
+} from "../persons/editableFields.js";
 
 export const personsRouter = Router();
 
@@ -166,6 +171,74 @@ personsRouter.get("/persons/:id", async (req: Request, res: Response) => {
       return;
     }
     res.json({ person: rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+personsRouter.patch("/persons/:id", async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "invalid id" });
+    return;
+  }
+  const body = req.body as unknown;
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    res.status(400).json({ error: "expected an object of field updates" });
+    return;
+  }
+
+  try {
+    const sets: string[] = [];
+    const values: unknown[] = [];
+    for (const [field, raw] of Object.entries(body)) {
+      const type = EDITABLE_FIELDS[field];
+      if (!type) throw new EditError(`field not editable: ${field}`);
+      values.push(coerceEditValue(field, type, raw));
+      sets.push(`${field} = $${values.length}${type === "jsonb" ? "::jsonb" : ""}`);
+    }
+    if (sets.length === 0) {
+      res.status(400).json({ error: "no fields to update" });
+      return;
+    }
+    values.push(id);
+
+    const { rows } = await pool.query(
+      `UPDATE persons SET ${sets.join(", ")} WHERE id = $${values.length}
+       RETURNING ${DETAIL_COLUMNS.join(", ")}`,
+      values
+    );
+    if (rows.length === 0) {
+      res.status(404).json({ error: "not found" });
+      return;
+    }
+    res.json({ person: rows[0] });
+  } catch (err) {
+    if (err instanceof EditError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    if ((err as { code?: string }).code === "23505") {
+      res.status(409).json({ error: "external_id already exists on another record" });
+      return;
+    }
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+personsRouter.delete("/persons/:id", async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "invalid id" });
+    return;
+  }
+  try {
+    const result = await pool.query("DELETE FROM persons WHERE id = $1", [id]);
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: "not found" });
+      return;
+    }
+    res.status(204).end();
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

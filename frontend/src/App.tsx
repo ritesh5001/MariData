@@ -5,7 +5,7 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import ImportPage from "./pages/Import";
 import Browse from "./pages/Browse";
-import Placeholder from "./pages/Placeholder";
+import Dedup from "./pages/Dedup";
 
 export default function App() {
   return (
@@ -22,10 +22,7 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="import" element={<ImportPage />} />
           <Route path="browse" element={<Browse />} />
-          <Route
-            path="segments"
-            element={<Placeholder title="Segments" phase={4} />}
-          />
+          <Route path="dedup" element={<Dedup />} />
         </Route>
       </Routes>
     </BrowserRouter>
