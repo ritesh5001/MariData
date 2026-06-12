@@ -5,6 +5,8 @@ services:
   db:
     image: pgvector/pgvector:pg16
     container_name: maridata-db
+    # Survives VPS reboots: Docker restarts the container automatically.
+    restart: unless-stopped
     environment:
       POSTGRES_USER: maridata
       POSTGRES_PASSWORD: maridata

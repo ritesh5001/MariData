@@ -23,6 +23,7 @@
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.13.1",
     "pg-copy-streams": "^7.0.0",
+    "pg-cursor": "^2.20.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
@@ -35,6 +36,7 @@
     "@types/node": "^22.10.5",
     "@types/pg": "^8.11.10",
     "@types/pg-copy-streams": "^1.2.5",
+    "@types/pg-cursor": "^2.7.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
   }

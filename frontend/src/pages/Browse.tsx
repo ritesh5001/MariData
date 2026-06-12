@@ -18,6 +18,7 @@ import FilterBuilder from "../components/FilterBuilder";
 import FacetPanel from "../components/FacetPanel";
 import SegmentBar from "../components/SegmentBar";
 import BulkToolbar from "../components/BulkToolbar";
+import ExportButton from "../components/ExportButton";
 import {
   emptyGroup,
   fromWire,
@@ -157,6 +158,12 @@ export default function Browse() {
           ))}
         </div>
 
+        <ExportButton
+          filterJson={filterJson}
+          q={q}
+          mode={mode}
+          visibleColumns={table.getVisibleLeafColumns().map((c) => c.id)}
+        />
         <button
           onClick={() => setShowFilters((s) => !s)}
           className={`rounded-md border px-3 py-1.5 text-sm ${

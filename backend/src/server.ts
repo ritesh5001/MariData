@@ -11,6 +11,8 @@ import { facetsRouter } from "./routes/facets.js";
 import { segmentsRouter } from "./routes/segments.js";
 import { dedupRouter } from "./routes/dedup.js";
 import { bulkRouter } from "./routes/bulk.js";
+import { exportRouter } from "./routes/export.js";
+import { statsRouter } from "./routes/stats.js";
 
 const app = express();
 
@@ -46,6 +48,8 @@ api.use(facetsRouter);
 api.use(segmentsRouter);
 api.use(dedupRouter);
 api.use(bulkRouter);
+api.use(exportRouter);
+api.use(statsRouter);
 app.use("/api", api);
 
 app.listen(config.port, () => {
