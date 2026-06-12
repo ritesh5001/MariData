@@ -4,6 +4,7 @@ import AppLayout from "./components/AppLayout";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import ImportPage from "./pages/Import";
+import Browse from "./pages/Browse";
 import Placeholder from "./pages/Placeholder";
 
 export default function App() {
@@ -20,7 +21,7 @@ export default function App() {
         >
           <Route index element={<Dashboard />} />
           <Route path="import" element={<ImportPage />} />
-          <Route path="browse" element={<Placeholder title="Browse" phase={3} />} />
+          <Route path="browse" element={<Browse />} />
           <Route
             path="segments"
             element={<Placeholder title="Segments" phase={4} />}

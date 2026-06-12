@@ -6,6 +6,9 @@ import { pool } from "./db/pool.js";
 import { authRouter } from "./auth/routes.js";
 import { requireAuth } from "./auth/middleware.js";
 import { importRouter } from "./routes/import.js";
+import { personsRouter } from "./routes/persons.js";
+import { facetsRouter } from "./routes/facets.js";
+import { segmentsRouter } from "./routes/segments.js";
 
 const app = express();
 
@@ -36,6 +39,9 @@ const api = express.Router();
 api.use(requireAuth);
 api.get("/ping", (_req, res) => res.json({ pong: true }));
 api.use(importRouter);
+api.use(personsRouter);
+api.use(facetsRouter);
+api.use(segmentsRouter);
 app.use("/api", api);
 
 app.listen(config.port, () => {

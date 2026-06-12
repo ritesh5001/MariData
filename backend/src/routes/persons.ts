@@ -1,0 +1,172 @@
+import { Router, type Request, type Response } from "express";
+import { z } from "zod";
+import { pool } from "../db/pool.js";
+import { COLUMN_MAP } from "../ingest/schema.js";
+import { keysetPage, rankedPage } from "../search/keyset.js";
+import { ftsCondition, fuzzyCondition, fuzzyRank } from "../search/textSearch.js";
+import { grandTotalEstimate, cappedCount, type Total } from "../search/counts.js";
+import {
+  parseFilterConfig,
+  filterConfigToWhereClause,
+  FilterError,
+} from "../search/filterConfigToWhereClause.js";
+
+export const personsRouter = Router();
+
+// Columns the browse grid needs; the full record comes from /persons/:id. In-code
+// constants — never derived from request input.
+const GRID_COLUMNS = [
+  "id",
+  "person_name",
+  "person_title",
+  "person_seniority",
+  "organization_name",
+  "person_email",
+  "person_email_status",
+  "person_phone",
+  "person_linkedin_url",
+  "location_city",
+  "location_state",
+  "location_country",
+  "num_linkedin_connections",
+  "job_start_date",
+  "tags",
+] as const;
+
+// Every typed column (the COLUMN_MAP targets) plus platform columns; excludes the bulky
+// generated search_vector.
+const DETAIL_COLUMNS = [
+  "id",
+  ...COLUMN_MAP.map((c) => c.target),
+  "tags",
+  "created_at",
+] as const;
+
+const FUZZY_RESULT_CAP = 100;
+
+const listSchema = z.object({
+  cursor: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  q: z.string().trim().min(1).max(200).optional(),
+  mode: z.enum(["fts", "fuzzy"]).default("fts"),
+  dir: z.enum(["asc", "desc"]).default("asc"),
+  // JSON-encoded filterConfig (filters.md); validated/compiled by the filter compiler.
+  filter: z.string().max(20_000).optional(),
+});
+
+interface GridRow {
+  id: number;
+  [key: string]: unknown;
+}
+
+// Compile the optional filterConfig and optional search box into one AND-combined,
+// fully parameterized WHERE fragment starting at $1.
+export function buildListWhere(
+  filterJson: string | undefined,
+  q: string | undefined,
+  mode: "fts" | "fuzzy"
+): { clause: string; values: unknown[] } | undefined {
+  const parts: string[] = [];
+  const values: unknown[] = [];
+
+  if (filterJson) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(filterJson);
+    } catch {
+      throw new FilterError("filter is not valid JSON");
+    }
+    const compiled = filterConfigToWhereClause(parseFilterConfig(parsed), 1);
+    parts.push(compiled.text);
+    values.push(...compiled.values);
+  }
+
+  if (q) {
+    const frag =
+      mode === "fuzzy"
+        ? fuzzyCondition(q, values.length + 1)
+        : ftsCondition(q, values.length + 1);
+    parts.push(frag.clause);
+    values.push(...frag.values);
+  }
+
+  if (parts.length === 0) return undefined;
+  return { clause: parts.join(" AND "), values };
+}
+
+personsRouter.get("/persons", async (req: Request, res: Response) => {
+  const parsed = listSchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "bad query" });
+    return;
+  }
+  const { cursor, limit, q, mode, dir, filter } = parsed.data;
+
+  try {
+    const where = buildListWhere(filter, q, mode);
+
+    if (q && mode === "fuzzy" && where) {
+      // Ranked by similarity; the rank expression reuses the q parameter (last value).
+      const rows = await rankedPage<GridRow>({
+        columns: GRID_COLUMNS,
+        where,
+        orderBy: fuzzyRank(where.values.length),
+        limit: FUZZY_RESULT_CAP,
+      });
+      const total: Total =
+        rows.length < FUZZY_RESULT_CAP
+          ? { kind: "exact", value: rows.length }
+          : await cappedCount(where.clause, where.values);
+      res.json({ rows, nextCursor: null, total });
+      return;
+    }
+
+    const page = await keysetPage<GridRow>({
+      columns: GRID_COLUMNS,
+      where,
+      cursor,
+      dir,
+      limit,
+    });
+    // Count once per search (first page); cursor pages reuse the client's cached total.
+    let total: Total | undefined;
+    if (cursor === undefined) {
+      total = where
+        ? await cappedCount(where.clause, where.values)
+        : await grandTotalEstimate();
+    }
+    res.json({ rows: page.rows, nextCursor: page.nextCursor, total });
+  } catch (err) {
+    if (err instanceof FilterError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    // Express 4 does not route async throws to error middleware; answer here.
+    if ((err as { code?: string }).code === "57014") {
+      res.status(504).json({ error: "query timed out" });
+      return;
+    }
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+personsRouter.get("/persons/:id", async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "invalid id" });
+    return;
+  }
+  try {
+    const { rows } = await pool.query(
+      `SELECT ${DETAIL_COLUMNS.join(", ")} FROM persons WHERE id = $1`,
+      [id]
+    );
+    if (rows.length === 0) {
+      res.status(404).json({ error: "not found" });
+      return;
+    }
+    res.json({ person: rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});

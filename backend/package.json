@@ -10,7 +10,8 @@
     "migrate": "tsx src/db/migrate.ts",
     "hash-password": "tsx scripts/hash-password.ts",
     "make-sample": "tsx scripts/make-sample-tsv.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test --import tsx \"src/**/*.test.ts\""
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
