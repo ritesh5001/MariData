@@ -45,11 +45,7 @@ export interface PreviewResult {
   sampleRows: string[][];
 }
 
-export async function previewFile(
-  filePath: string,
-  hasHeader: boolean
-): Promise<PreviewResult> {
-  const lines = await readFirstLines(filePath, hasHeader ? 11 : 10);
+export function previewLines(lines: string[], hasHeader: boolean): PreviewResult {
   const split = (l: string) => l.split("\t");
 
   let detectedColumns: string[];
@@ -73,4 +69,23 @@ export async function previewFile(
       : detectedColumns.length === expected.length,
     sampleRows: sampleLines.map(split),
   };
+}
+
+export async function previewFile(
+  filePath: string,
+  hasHeader: boolean
+): Promise<PreviewResult> {
+  const lines = await readFirstLines(filePath, hasHeader ? 11 : 10);
+  return previewLines(lines, hasHeader);
+}
+
+// Preview from a raw text sample (the browser sends the first chunk of an upload, since
+// the file has no server path until it streams through COPY).
+export function previewSample(sampleText: string, hasHeader: boolean): PreviewResult {
+  const lines = sampleText
+    .split("\n")
+    .map((l) => l.replace(/\r$/, ""))
+    .filter((l) => l.length > 0)
+    .slice(0, hasHeader ? 11 : 10);
+  return previewLines(lines, hasHeader);
 }

@@ -3,6 +3,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import AppLayout from "./components/AppLayout";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
+import ImportPage from "./pages/Import";
 import Placeholder from "./pages/Placeholder";
 
 export default function App() {
@@ -18,7 +19,7 @@ export default function App() {
           }
         >
           <Route index element={<Dashboard />} />
-          <Route path="import" element={<Placeholder title="Import" phase={2} />} />
+          <Route path="import" element={<ImportPage />} />
           <Route path="browse" element={<Placeholder title="Browse" phase={3} />} />
           <Route
             path="segments"

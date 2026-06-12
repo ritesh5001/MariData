@@ -12,25 +12,38 @@ export async function transformStagingToPersons(
   const targets = COLUMN_MAP.map((c) => c.target);
   const exprs = COLUMN_MAP.map((c) => c.expr);
 
-  let conflict: string;
   if (mode === "upsert") {
     const updates = targets
       .filter((t) => t !== "external_id")
       .map((t) => `${t} = EXCLUDED.${t}`)
       .join(", ");
-    conflict = `ON CONFLICT (external_id) WHERE external_id IS NOT NULL DO UPDATE SET ${updates}`;
-  } else {
-    conflict = "ON CONFLICT DO NOTHING";
+
+    // DO UPDATE cannot touch the same target row twice in one statement, so in-batch
+    // duplicate external_ids must be collapsed first (DISTINCT ON keeps one arbitrary
+    // row per id). Rows without an external_id cannot conflict (partial unique index),
+    // so they insert plainly in a second statement.
+    const withId = await client.query(`
+      INSERT INTO persons (${targets.join(", ")})
+      SELECT DISTINCT ON (NULLIF(btrim(src_id), '')) ${exprs.join(", ")}
+      FROM persons_staging
+      WHERE NULLIF(btrim(src_id), '') IS NOT NULL
+      ON CONFLICT (external_id) WHERE external_id IS NOT NULL DO UPDATE SET ${updates}
+    `);
+    const withoutId = await client.query(`
+      INSERT INTO persons (${targets.join(", ")})
+      SELECT ${exprs.join(", ")}
+      FROM persons_staging
+      WHERE NULLIF(btrim(src_id), '') IS NULL
+    `);
+    return (withId.rowCount ?? 0) + (withoutId.rowCount ?? 0);
   }
 
-  const sql = `
+  const res = await client.query(`
     INSERT INTO persons (${targets.join(", ")})
     SELECT ${exprs.join(", ")}
     FROM persons_staging
-    ${conflict}
-  `;
-
-  const res = await client.query(sql);
+    ON CONFLICT DO NOTHING
+  `);
   return res.rowCount ?? 0;
 }
 

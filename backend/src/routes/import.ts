@@ -2,32 +2,43 @@ import fs from "node:fs";
 import { Router, type Request, type Response } from "express";
 import busboy from "busboy";
 import { z } from "zod";
-import { previewFile } from "../ingest/preview.js";
+import { previewFile, previewSample } from "../ingest/preview.js";
 import { runImport } from "../ingest/runImport.js";
 import { createJob, getJob, listJobs } from "../ingest/jobTracker.js";
 import { subscribe, lastEvent } from "../ingest/progress.js";
 
 export const importRouter = Router();
 
-const previewSchema = z.object({
-  serverPath: z.string().min(1),
-  hasHeader: z.boolean().default(true),
-});
+const previewSchema = z.union([
+  z.object({
+    serverPath: z.string().min(1),
+    hasHeader: z.boolean().default(true),
+  }),
+  z.object({
+    // First chunk of a browser upload; capped well above 11 lines of any sane TSV.
+    sampleText: z.string().min(1).max(1_000_000),
+    hasHeader: z.boolean().default(true),
+  }),
+]);
 
 importRouter.post("/import/preview", async (req: Request, res: Response) => {
   const parsed = previewSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: "serverPath required" });
+    res.status(400).json({ error: "serverPath or sampleText required" });
     return;
   }
-  const { serverPath, hasHeader } = parsed.data;
-  if (!fs.existsSync(serverPath)) {
-    res.status(400).json({ error: "file not found at serverPath" });
-    return;
-  }
+  const { hasHeader } = parsed.data;
   try {
-    const result = await previewFile(serverPath, hasHeader);
-    res.json(result);
+    if ("sampleText" in parsed.data) {
+      res.json(previewSample(parsed.data.sampleText, hasHeader));
+      return;
+    }
+    const { serverPath } = parsed.data;
+    if (!fs.existsSync(serverPath)) {
+      res.status(400).json({ error: "file not found at serverPath" });
+      return;
+    }
+    res.json(await previewFile(serverPath, hasHeader));
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
