@@ -21,7 +21,10 @@ export const config = {
     "postgresql://localhost:5432/maridata"
   ),
   port: Number(process.env.PORT ?? 4000),
-  clientOrigin: process.env.CLIENT_ORIGIN ?? "http://localhost:5173",
+  clientOrigin: (process.env.CLIENT_ORIGIN ?? "http://localhost:5173")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean),
   jwtSecret: process.env.JWT_SECRET ?? "dev-insecure-secret-change-me",
   adminPasswordHash: process.env.ADMIN_PASSWORD_HASH ?? "",
   // ~12h sessions
