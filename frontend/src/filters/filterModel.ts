@@ -11,32 +11,52 @@ export interface FieldDef {
 }
 
 export const FIELD_DEFS: FieldDef[] = [
+  // identity / names
   { field: "person_name", label: "Name", type: "text" },
   { field: "person_first_name", label: "First name", type: "text" },
   { field: "person_last_name", label: "Last name", type: "text" },
   { field: "person_name_downcase", label: "Name (lowercase)", type: "text", fuzzy: true },
+  // role
   { field: "person_title", label: "Title", type: "text" },
   { field: "person_title_normalized", label: "Title (normalized)", type: "text" },
   { field: "primary_title_faceting", label: "Title (facet)", type: "text" },
   { field: "person_detailed_function", label: "Detailed function", type: "text" },
   { field: "person_functions", label: "Functions", type: "array" },
   { field: "person_seniority", label: "Seniority", type: "text" },
+  // contact
   { field: "person_email", label: "Email", type: "text", fuzzy: true },
+  { field: "person_email_analyzed", label: "Email (analyzed)", type: "text" },
   { field: "person_email_status", label: "Email status", type: "text" },
   { field: "email_confidence", label: "Email confidence", type: "number" },
   { field: "person_phone", label: "Phone", type: "text" },
+  { field: "person_sanitized_phone", label: "Phone (sanitized)", type: "text" },
   { field: "person_linkedin_url", label: "LinkedIn URL", type: "text" },
   { field: "num_linkedin_connections", label: "LinkedIn connections", type: "number" },
+  // org
   { field: "organization_name", label: "Organization", type: "text", fuzzy: true },
+  { field: "current_organization_ids", label: "Organization IDs", type: "array" },
+  // location
   { field: "location_city", label: "City", type: "text" },
+  { field: "location_city_full", label: "City (full)", type: "text" },
   { field: "location_state", label: "State", type: "text" },
+  { field: "location_state_full", label: "State (full)", type: "text" },
   { field: "location_country", label: "Country", type: "text" },
   { field: "location_postal_code", label: "Postal code", type: "text" },
+  // employment / scoring
   { field: "job_start_date", label: "Job start date", type: "date" },
-  { field: "relevance_boost", label: "Relevance boost", type: "number" },
   { field: "modality", label: "Modality", type: "text" },
-  { field: "tags", label: "Tags", type: "array" },
+  { field: "prospected_by_team_ids", label: "Prospected by team IDs", type: "array" },
+  { field: "excluded_by_team_ids", label: "Excluded by team IDs", type: "array" },
+  { field: "relevance_boost", label: "Relevance boost", type: "number" },
+  { field: "random", label: "Random", type: "number" },
+  { field: "person_vacuumed_at", label: "Vacuumed at", type: "date" },
+  // provenance
+  { field: "source_index", label: "Source index", type: "text" },
   { field: "source_type", label: "Source type", type: "text" },
+  { field: "external_id", label: "External ID", type: "text" },
+  { field: "source_score", label: "Source score", type: "number" },
+  // platform
+  { field: "tags", label: "Tags", type: "array" },
   { field: "created_at", label: "Created at", type: "date" },
 ];
 
