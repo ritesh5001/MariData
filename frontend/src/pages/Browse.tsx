@@ -12,6 +12,7 @@ import {
   formatTotal,
   type PersonRow,
   type SearchMode,
+  type SortState,
 } from "../api/persons";
 import PersonDrawer from "../components/PersonDrawer";
 import FilterBuilder from "../components/FilterBuilder";
@@ -62,6 +63,19 @@ export default function Browse() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [filterTree, setFilterTree] = useState<FilterGroup>(emptyGroup());
   const [showFilters, setShowFilters] = useState(false);
+  const [sort, setSort] = useState<SortState>({ col: "id", dir: "asc" });
+
+  // Server-side sort: clicking a header sorts ascending, clicking the active header flips
+  // direction. Sorting is disabled for fuzzy search (results are ranked by similarity).
+  const sortDisabled = mode === "fuzzy" && q !== "";
+  function toggleSort(colId: string) {
+    if (sortDisabled) return;
+    setSort((s) =>
+      s.col === colId
+        ? { col: colId, dir: s.dir === "asc" ? "desc" : "asc" }
+        : { col: colId, dir: "asc" }
+    );
+  }
 
   // Debounce the search box so we do not hit the API per keystroke.
   useEffect(() => {
@@ -82,7 +96,7 @@ export default function Browse() {
     setShowFilters(true);
   }
 
-  const query = usePersonsInfinite(q, mode, filterJson);
+  const query = usePersonsInfinite(q, mode, filterJson, sort);
   const rows = useMemo(
     () => query.data?.pages.flatMap((p) => p.rows) ?? [],
     [query.data]
@@ -98,6 +112,9 @@ export default function Browse() {
   });
 
   const tableRows = table.getRowModel().rows;
+  // Total pixel width of the visible columns. The virtualized <tbody> is display:block, so it
+  // is detached from the table layout and must be sized explicitly or the rows collapse.
+  const totalWidth = table.getTotalSize();
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: tableRows.length,
@@ -235,25 +252,43 @@ export default function Browse() {
           ref={scrollRef}
           className="min-w-0 flex-1 overflow-auto rounded-lg border border-slate-200 bg-white"
         >
-        <table className="w-full border-collapse text-sm" style={{ tableLayout: "fixed" }}>
+        <table
+          className="border-collapse text-sm"
+          style={{ tableLayout: "fixed", width: totalWidth, minWidth: "100%" }}
+        >
           <thead className="sticky top-0 z-10 bg-slate-50">
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
-                {hg.headers.map((h) => (
-                  <th
-                    key={h.id}
-                    style={{ width: h.getSize() }}
-                    className="whitespace-nowrap border-b border-slate-200 px-3 py-2 text-left text-xs font-medium text-slate-500"
-                  >
-                    {flexRender(h.column.columnDef.header, h.getContext())}
-                  </th>
-                ))}
+                {hg.headers.map((h) => {
+                  const active = sort.col === h.column.id;
+                  return (
+                    <th
+                      key={h.id}
+                      style={{ width: h.getSize() }}
+                      onClick={() => toggleSort(h.column.id)}
+                      className={`whitespace-nowrap border-b border-slate-200 px-3 py-2 text-left text-xs font-medium ${
+                        sortDisabled
+                          ? "cursor-default text-slate-400"
+                          : "cursor-pointer select-none text-slate-500 hover:bg-slate-100"
+                      }`}
+                      title={sortDisabled ? "Sorting is unavailable for fuzzy search" : "Click to sort"}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        {flexRender(h.column.columnDef.header, h.getContext())}
+                        <span className={active ? "text-accent" : "text-slate-300"}>
+                          {active ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}
+                        </span>
+                      </span>
+                    </th>
+                  );
+                })}
               </tr>
             ))}
           </thead>
           <tbody
             style={{
               height: virtualizer.getTotalSize(),
+              width: totalWidth,
               position: "relative",
               display: "block",
             }}
@@ -271,7 +306,7 @@ export default function Browse() {
                     <td
                       key={cell.id}
                       style={{ width: cell.column.getSize() }}
-                      className="truncate whitespace-nowrap px-3 py-2 text-slate-700"
+                      className="shrink-0 truncate whitespace-nowrap px-3 py-2 text-slate-700"
                       title={String(cell.getValue() ?? "")}
                     >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}

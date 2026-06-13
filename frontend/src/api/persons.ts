@@ -28,21 +28,28 @@ export interface Total {
 
 export interface PersonsPage {
   rows: PersonRow[];
-  nextCursor: number | null;
+  nextCursor: string | null;
   total?: Total;
 }
 
 export type SearchMode = "fts" | "fuzzy";
+export type SortDir = "asc" | "desc";
+export interface SortState {
+  col: string;
+  dir: SortDir;
+}
 
 export function usePersonsInfinite(
   q: string,
   mode: SearchMode,
-  filterJson: string | null = null
+  filterJson: string | null = null,
+  sort: SortState = { col: "id", dir: "asc" }
 ) {
   return useInfiniteQuery({
-    queryKey: ["persons", q, mode, filterJson],
+    queryKey: ["persons", q, mode, filterJson, sort.col, sort.dir],
     queryFn: ({ pageParam }) => {
-      const params = new URLSearchParams({ limit: "100" });
+      const params = new URLSearchParams({ limit: "100", dir: sort.dir });
+      if (sort.col !== "id") params.set("sort", sort.col);
       if (q) {
         params.set("q", q);
         params.set("mode", mode);
@@ -51,7 +58,7 @@ export function usePersonsInfinite(
       if (pageParam != null) params.set("cursor", String(pageParam));
       return api<PersonsPage>(`/api/persons?${params}`);
     },
-    initialPageParam: null as number | null,
+    initialPageParam: null as string | null,
     getNextPageParam: (last) => last.nextCursor,
   });
 }

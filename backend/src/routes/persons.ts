@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool.js";
 import { COLUMN_MAP } from "../ingest/schema.js";
-import { keysetPage, rankedPage } from "../search/keyset.js";
+import { keysetPage, rankedPage, type KeysetCursor } from "../search/keyset.js";
 import { ftsCondition, fuzzyCondition, fuzzyRank } from "../search/textSearch.js";
 import { grandTotalEstimate, cappedCount, type Total } from "../search/counts.js";
 import {
@@ -49,15 +49,39 @@ const DETAIL_COLUMNS = [
 
 const FUZZY_RESULT_CAP = 100;
 
+// Columns the grid may sort by — the same in-code constants the grid selects, so an
+// identifier here is never user-derived.
+const SORTABLE_COLUMNS = new Set<string>(GRID_COLUMNS);
+
 const listSchema = z.object({
-  cursor: z.coerce.number().int().positive().optional(),
+  // Opaque base64 keyset cursor (see encode/decodeCursor); never a row offset.
+  cursor: z.string().max(512).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   q: z.string().trim().min(1).max(200).optional(),
   mode: z.enum(["fts", "fuzzy"]).default("fts"),
   dir: z.enum(["asc", "desc"]).default("asc"),
+  // Column to sort by; defaults to id (the keyset primary key).
+  sort: z.string().max(64).optional(),
   // JSON-encoded filterConfig (filters.md); validated/compiled by the filter compiler.
   filter: z.string().max(20_000).optional(),
 });
+
+function encodeCursor(c: KeysetCursor): string {
+  return Buffer.from(JSON.stringify(c)).toString("base64url");
+}
+
+function decodeCursor(s: string): KeysetCursor {
+  try {
+    const o = JSON.parse(Buffer.from(s, "base64url").toString("utf8")) as {
+      value?: unknown;
+      id?: unknown;
+    };
+    if (typeof o.id !== "number" || !Number.isInteger(o.id)) throw new Error("bad id");
+    return { value: o.value, id: o.id };
+  } catch {
+    throw new FilterError("invalid cursor");
+  }
+}
 
 interface GridRow {
   id: number;
@@ -105,13 +129,19 @@ personsRouter.get("/persons", async (req: Request, res: Response) => {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "bad query" });
     return;
   }
-  const { cursor, limit, q, mode, dir, filter } = parsed.data;
+  const { cursor, limit, q, mode, dir, sort, filter } = parsed.data;
+
+  if (sort !== undefined && sort !== "id" && !SORTABLE_COLUMNS.has(sort)) {
+    res.status(400).json({ error: `cannot sort by: ${sort}` });
+    return;
+  }
 
   try {
     const where = buildListWhere(filter, q, mode);
 
     if (q && mode === "fuzzy" && where) {
       // Ranked by similarity; the rank expression reuses the q parameter (last value).
+      // Similarity ranking owns the order, so column sort does not apply here.
       const rows = await rankedPage<GridRow>({
         columns: GRID_COLUMNS,
         where,
@@ -129,7 +159,8 @@ personsRouter.get("/persons", async (req: Request, res: Response) => {
     const page = await keysetPage<GridRow>({
       columns: GRID_COLUMNS,
       where,
-      cursor,
+      sortColumn: sort,
+      cursor: cursor ? decodeCursor(cursor) : undefined,
       dir,
       limit,
     });
@@ -140,7 +171,11 @@ personsRouter.get("/persons", async (req: Request, res: Response) => {
         ? await cappedCount(where.clause, where.values)
         : await grandTotalEstimate();
     }
-    res.json({ rows: page.rows, nextCursor: page.nextCursor, total });
+    res.json({
+      rows: page.rows,
+      nextCursor: page.nextCursor ? encodeCursor(page.nextCursor) : null,
+      total,
+    });
   } catch (err) {
     if (err instanceof FilterError) {
       res.status(400).json({ error: err.message });

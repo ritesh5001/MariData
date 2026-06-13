@@ -6,15 +6,25 @@ import { pool } from "../db/pool.js";
 // Column lists come from in-code constants (never user input), so interpolating them is
 // safe; all user-supplied values ride in $n parameters.
 
+// A keyset boundary. For id-only sorts only `id` is set; when sorting by another column
+// `value` carries that column's value at the boundary row (null is meaningful — it marks
+// the trailing NULLS LAST block).
+export interface KeysetCursor {
+  value?: unknown;
+  id: number;
+}
+
 export interface KeysetPage<T> {
   rows: T[];
-  nextCursor: number | null;
+  nextCursor: KeysetCursor | null;
 }
 
 export interface KeysetOptions {
   columns: readonly string[];
   where?: { clause: string; values: unknown[] };
-  cursor?: number;
+  // Whitelisted in-code identifier to sort by; undefined or "id" => seek by id only.
+  sortColumn?: string;
+  cursor?: KeysetCursor;
   dir: "asc" | "desc";
   limit: number;
   timeoutMs?: number;
@@ -27,9 +37,38 @@ export async function keysetPage<T extends { id: number }>(
   const conds: string[] = [];
   if (opts.where) conds.push(opts.where.clause);
 
-  if (opts.cursor !== undefined) {
-    values.push(opts.cursor);
-    conds.push(`id ${opts.dir === "asc" ? ">" : "<"} $${values.length}`);
+  const col = opts.sortColumn;
+  const byColumn = col !== undefined && col !== "id";
+  const cmp = opts.dir === "asc" ? ">" : "<";
+
+  let orderBy: string;
+  if (!byColumn) {
+    // Original fast path: keyset purely on the primary key.
+    if (opts.cursor !== undefined) {
+      values.push(opts.cursor.id);
+      conds.push(`id ${cmp} $${values.length}`);
+    }
+    orderBy = `id ${opts.dir === "asc" ? "ASC" : "DESC"}`;
+  } else {
+    // Keyset on (col, id) with NULLS LAST. The id tiebreaker is always ASC so the
+    // boundary predicate and ORDER BY agree regardless of the chosen direction.
+    if (opts.cursor !== undefined) {
+      if (opts.cursor.value === null || opts.cursor.value === undefined) {
+        // Boundary sits inside the trailing NULL block; only id advances.
+        values.push(opts.cursor.id);
+        conds.push(`(${col} IS NULL AND id > $${values.length})`);
+      } else {
+        values.push(opts.cursor.value);
+        const a = values.length;
+        values.push(opts.cursor.id);
+        const b = values.length;
+        // Strictly past cv, OR into the NULL tail, OR tied on cv with a larger id.
+        conds.push(
+          `(${col} ${cmp} $${a} OR ${col} IS NULL OR (${col} = $${a} AND id > $${b}))`
+        );
+      }
+    }
+    orderBy = `${col} ${opts.dir === "asc" ? "ASC" : "DESC"} NULLS LAST, id ASC`;
   }
 
   const whereSql = conds.length > 0 ? `WHERE ${conds.join(" AND ")}` : "";
@@ -38,7 +77,7 @@ export async function keysetPage<T extends { id: number }>(
     SELECT ${opts.columns.join(", ")}
     FROM persons
     ${whereSql}
-    ORDER BY id ${opts.dir === "asc" ? "ASC" : "DESC"}
+    ORDER BY ${orderBy}
     LIMIT $${values.length}
   `;
 
@@ -53,10 +92,12 @@ export async function keysetPage<T extends { id: number }>(
 
     const hasMore = res.rows.length > opts.limit;
     const rows = hasMore ? res.rows.slice(0, opts.limit) : res.rows;
-    return {
-      rows,
-      nextCursor: hasMore && rows.length > 0 ? rows[rows.length - 1]!.id : null,
-    };
+    let nextCursor: KeysetCursor | null = null;
+    if (hasMore && rows.length > 0) {
+      const last = rows[rows.length - 1]! as T & Record<string, unknown>;
+      nextCursor = byColumn ? { value: last[col] ?? null, id: last.id } : { id: last.id };
+    }
+    return { rows, nextCursor };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw err;
