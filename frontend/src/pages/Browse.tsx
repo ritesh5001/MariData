@@ -30,27 +30,79 @@ import {
 
 const col = createColumnHelper<PersonRow>();
 
-const text = (v: unknown) => (v == null || v === "" ? "—" : String(v));
+// Cell renderers per value kind. Arrays join, JSONB stringifies, dates show the day part.
+const fmtText = (v: unknown) => (v == null || v === "" ? "—" : String(v));
+const fmtDate = (v: unknown) => (v ? String(v).slice(0, 10) : "—");
+const fmtArray = (v: unknown) =>
+  Array.isArray(v) && v.length > 0 ? v.join(", ") : "—";
+const fmtJson = (v: unknown) =>
+  v == null ? "—" : typeof v === "string" ? v : JSON.stringify(v);
 
-const COLUMNS = [
-  col.accessor("id", { header: "ID", size: 70 }),
-  col.accessor("person_name", { header: "Name", size: 180, cell: (c) => text(c.getValue()) }),
-  col.accessor("person_title", { header: "Title", size: 160, cell: (c) => text(c.getValue()) }),
-  col.accessor("person_seniority", { header: "Seniority", size: 110, cell: (c) => text(c.getValue()) }),
-  col.accessor("organization_name", { header: "Organization", size: 160, cell: (c) => text(c.getValue()) }),
-  col.accessor("person_email", { header: "Email", size: 230, cell: (c) => text(c.getValue()) }),
-  col.accessor("person_email_status", { header: "Email status", size: 110, cell: (c) => text(c.getValue()) }),
-  col.accessor("person_phone", { header: "Phone", size: 140, cell: (c) => text(c.getValue()) }),
-  col.accessor("location_city", { header: "City", size: 130, cell: (c) => text(c.getValue()) }),
-  col.accessor("location_state", { header: "State", size: 120, cell: (c) => text(c.getValue()) }),
-  col.accessor("location_country", { header: "Country", size: 90, cell: (c) => text(c.getValue()) }),
-  col.accessor("num_linkedin_connections", { header: "LinkedIn conns", size: 120, cell: (c) => text(c.getValue()) }),
-  col.accessor("job_start_date", {
-    header: "Job start",
-    size: 110,
-    cell: (c) => (c.getValue() ? String(c.getValue()).slice(0, 10) : "—"),
-  }),
+type ColKind = "text" | "num" | "date" | "array" | "json";
+
+// Every typed column from the TSV (matches the backend GRID_COLUMNS / COLUMN_MAP order).
+// `array` and `json` columns are display-only — the backend rejects sorting on them.
+const GRID_FIELDS: { key: string; label: string; size: number; kind: ColKind }[] = [
+  { key: "id", label: "ID", size: 70, kind: "num" },
+  { key: "person_name", label: "Name", size: 180, kind: "text" },
+  { key: "person_first_name", label: "First name", size: 120, kind: "text" },
+  { key: "person_last_name", label: "Last name", size: 120, kind: "text" },
+  { key: "person_name_downcase", label: "Name (lowercase)", size: 160, kind: "text" },
+  { key: "person_title", label: "Title", size: 180, kind: "text" },
+  { key: "person_functions", label: "Functions", size: 160, kind: "array" },
+  { key: "person_seniority", label: "Seniority", size: 110, kind: "text" },
+  { key: "person_email_status", label: "Email status", size: 110, kind: "text" },
+  { key: "email_confidence", label: "Email confidence", size: 110, kind: "num" },
+  { key: "person_email", label: "Email", size: 230, kind: "text" },
+  { key: "person_phone", label: "Phone", size: 140, kind: "text" },
+  { key: "person_sanitized_phone", label: "Phone (sanitized)", size: 150, kind: "text" },
+  { key: "person_email_analyzed", label: "Email (analyzed)", size: 230, kind: "text" },
+  { key: "person_linkedin_url", label: "LinkedIn URL", size: 220, kind: "text" },
+  { key: "person_detailed_function", label: "Detailed function", size: 160, kind: "text" },
+  { key: "person_title_normalized", label: "Title (normalized)", size: 170, kind: "text" },
+  { key: "primary_title_faceting", label: "Title (facet)", size: 160, kind: "text" },
+  { key: "organization_name", label: "Organization", size: 180, kind: "text" },
+  { key: "current_organization_ids", label: "Organization IDs", size: 160, kind: "array" },
+  { key: "location_city", label: "City", size: 130, kind: "text" },
+  { key: "location_city_full", label: "City (full)", size: 180, kind: "text" },
+  { key: "location_state", label: "State", size: 120, kind: "text" },
+  { key: "location_state_full", label: "State (full)", size: 170, kind: "text" },
+  { key: "location_country", label: "Country", size: 110, kind: "text" },
+  { key: "location_postal_code", label: "Postal code", size: 110, kind: "text" },
+  { key: "location_geojson", label: "Geo (JSON)", size: 180, kind: "json" },
+  { key: "job_start_date", label: "Job start", size: 110, kind: "date" },
+  { key: "modality", label: "Modality", size: 110, kind: "text" },
+  { key: "prospected_by_team_ids", label: "Prospected team IDs", size: 160, kind: "array" },
+  { key: "excluded_by_team_ids", label: "Excluded team IDs", size: 160, kind: "array" },
+  { key: "relevance_boost", label: "Relevance boost", size: 120, kind: "num" },
+  { key: "num_linkedin_connections", label: "LinkedIn conns", size: 120, kind: "num" },
+  { key: "predictive_scores", label: "Predictive scores", size: 180, kind: "json" },
+  { key: "person_vacuumed_at", label: "Vacuumed at", size: 160, kind: "date" },
+  { key: "random", label: "Random", size: 100, kind: "num" },
+  { key: "source_index", label: "Source index", size: 140, kind: "text" },
+  { key: "source_type", label: "Source type", size: 120, kind: "text" },
+  { key: "external_id", label: "External ID", size: 200, kind: "text" },
+  { key: "source_score", label: "Source score", size: 120, kind: "num" },
+  { key: "tags", label: "Tags", size: 140, kind: "array" },
+  { key: "created_at", label: "Created at", size: 160, kind: "date" },
 ];
+
+// Only scalar columns can be sorted (the backend whitelist agrees).
+const SORTABLE_KEYS = new Set(
+  GRID_FIELDS.filter((f) => f.kind !== "array" && f.kind !== "json").map((f) => f.key)
+);
+
+const cellFor = (kind: ColKind) =>
+  kind === "date" ? fmtDate : kind === "array" ? fmtArray : kind === "json" ? fmtJson : fmtText;
+
+const COLUMNS = GRID_FIELDS.map((f) =>
+  col.accessor((row) => row[f.key], {
+    id: f.key,
+    header: f.label,
+    size: f.size,
+    cell: (c) => cellFor(f.kind)(c.getValue()),
+  })
+);
 
 const ROW_HEIGHT = 36;
 
@@ -69,7 +121,7 @@ export default function Browse() {
   // direction. Sorting is disabled for fuzzy search (results are ranked by similarity).
   const sortDisabled = mode === "fuzzy" && q !== "";
   function toggleSort(colId: string) {
-    if (sortDisabled) return;
+    if (sortDisabled || !SORTABLE_KEYS.has(colId)) return;
     setSort((s) =>
       s.col === colId
         ? { col: colId, dir: s.dir === "asc" ? "desc" : "asc" }
@@ -261,23 +313,32 @@ export default function Browse() {
               <tr key={hg.id}>
                 {hg.headers.map((h) => {
                   const active = sort.col === h.column.id;
+                  const sortable = !sortDisabled && SORTABLE_KEYS.has(h.column.id);
                   return (
                     <th
                       key={h.id}
                       style={{ width: h.getSize() }}
                       onClick={() => toggleSort(h.column.id)}
                       className={`whitespace-nowrap border-b border-slate-200 px-3 py-2 text-left text-xs font-medium ${
-                        sortDisabled
-                          ? "cursor-default text-slate-400"
-                          : "cursor-pointer select-none text-slate-500 hover:bg-slate-100"
+                        sortable
+                          ? "cursor-pointer select-none text-slate-500 hover:bg-slate-100"
+                          : "cursor-default text-slate-400"
                       }`}
-                      title={sortDisabled ? "Sorting is unavailable for fuzzy search" : "Click to sort"}
+                      title={
+                        sortDisabled
+                          ? "Sorting is unavailable for fuzzy search"
+                          : sortable
+                            ? "Click to sort"
+                            : "This column is not sortable"
+                      }
                     >
                       <span className="inline-flex items-center gap-1">
                         {flexRender(h.column.columnDef.header, h.getContext())}
-                        <span className={active ? "text-accent" : "text-slate-300"}>
-                          {active ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}
-                        </span>
+                        {sortable && (
+                          <span className={active ? "text-accent" : "text-slate-300"}>
+                            {active ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}
+                          </span>
+                        )}
                       </span>
                     </th>
                   );

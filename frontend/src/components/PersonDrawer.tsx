@@ -262,7 +262,9 @@ export default function PersonDrawer({
         <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-5 py-4">
           <div className="min-w-0">
             <h2 className="truncate text-lg font-semibold">
-              {person?.person_name ?? `Person #${personId}`}
+              {typeof person?.person_name === "string"
+                ? person.person_name
+                : `Person #${personId}`}
             </h2>
             {person?.person_title != null && (
               <p className="truncate text-sm text-slate-500">

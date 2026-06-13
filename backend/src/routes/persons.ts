@@ -3,6 +3,7 @@ import { z } from "zod";
 import { pool } from "../db/pool.js";
 import { COLUMN_MAP } from "../ingest/schema.js";
 import { keysetPage, rankedPage, type KeysetCursor } from "../search/keyset.js";
+import { FILTER_FIELDS } from "../search/filterFields.js";
 import { ftsCondition, fuzzyCondition, fuzzyRank } from "../search/textSearch.js";
 import { grandTotalEstimate, cappedCount, type Total } from "../search/counts.js";
 import {
@@ -18,40 +19,29 @@ import {
 
 export const personsRouter = Router();
 
-// Columns the browse grid needs; the full record comes from /persons/:id. In-code
-// constants — never derived from request input.
-const GRID_COLUMNS = [
-  "id",
-  "person_name",
-  "person_title",
-  "person_seniority",
-  "organization_name",
-  "person_email",
-  "person_email_status",
-  "person_phone",
-  "person_linkedin_url",
-  "location_city",
-  "location_state",
-  "location_country",
-  "num_linkedin_connections",
-  "job_start_date",
-  "tags",
-] as const;
-
-// Every typed column (the COLUMN_MAP targets) plus platform columns; excludes the bulky
-// generated search_vector.
-const DETAIL_COLUMNS = [
+// Every typed column (the COLUMN_MAP targets) plus platform columns; excludes only the
+// bulky generated search_vector. The browse grid and the detail view share this list, so
+// every TSV column is available in both. In-code constants — never derived from request input.
+const ALL_COLUMNS = [
   "id",
   ...COLUMN_MAP.map((c) => c.target),
   "tags",
   "created_at",
 ] as const;
+const GRID_COLUMNS = ALL_COLUMNS;
+const DETAIL_COLUMNS = ALL_COLUMNS;
 
 const FUZZY_RESULT_CAP = 100;
 
-// Columns the grid may sort by — the same in-code constants the grid selects, so an
-// identifier here is never user-derived.
-const SORTABLE_COLUMNS = new Set<string>(GRID_COLUMNS);
+// Columns the grid may sort by: scalar (text/number/date) columns only. Array and JSONB
+// columns are shown but not sortable — a keyset seek on them is ill-defined. The whitelist
+// is derived from in-code constants, so an identifier here is never user-derived.
+const SORTABLE_COLUMNS = new Set<string>(
+  GRID_COLUMNS.filter((c) => {
+    const t = FILTER_FIELDS[c];
+    return t !== undefined && t !== "array";
+  })
+);
 
 const listSchema = z.object({
   // Opaque base64 keyset cursor (see encode/decodeCursor); never a row offset.

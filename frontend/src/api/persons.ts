@@ -1,22 +1,11 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { api } from "./client";
 
+// The grid returns every typed column; values vary by column (text/number/date/array/jsonb),
+// so rows are keyed loosely and the column metadata drives rendering.
 export interface PersonRow {
   id: number;
-  person_name: string | null;
-  person_title: string | null;
-  person_seniority: string | null;
-  organization_name: string | null;
-  person_email: string | null;
-  person_email_status: string | null;
-  person_phone: string | null;
-  person_linkedin_url: string | null;
-  location_city: string | null;
-  location_state: string | null;
-  location_country: string | null;
-  num_linkedin_connections: number | null;
-  job_start_date: string | null;
-  tags: string[] | null;
+  [key: string]: unknown;
 }
 
 export type PersonDetail = PersonRow & Record<string, unknown>;
