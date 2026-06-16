@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc -p tsconfig.json",
-    "postinstall": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/copy-sql.mjs",
+    "postinstall": "npm run build",
     "start": "node dist/src/server.js",
     "migrate": "tsx src/db/migrate.ts",
     "hash-password": "tsx scripts/hash-password.ts",
