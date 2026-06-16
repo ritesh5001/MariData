@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { PassThrough } from "node:stream";
 import { Router, type Request, type Response } from "express";
 import busboy from "busboy";
 import { z } from "zod";
@@ -92,6 +93,7 @@ async function startFromUpload(req: Request, res: Response): Promise<void> {
   const bb = busboy({ headers: req.headers });
   const fields: Record<string, string> = {};
   let handled = false;
+  let source: PassThrough | null = null;
 
   bb.on("field", (name, val) => {
     fields[name] = val;
@@ -99,27 +101,65 @@ async function startFromUpload(req: Request, res: Response): Promise<void> {
 
   bb.on("file", (_name, fileStream, info) => {
     handled = true;
+
+    // Attach a consumer to the busboy file part SYNCHRONOUSLY — in the same tick as the
+    // event. busboy stalls a file stream that has no reader, and createJob() below is an
+    // async DB round-trip (followed by more inside runImport) before the COPY pipeline
+    // attaches. Without this immediate pipe the stream sits unread during that gap, so
+    // `COPY ... FROM STDIN` hangs at ClientRead forever and persons_staging never gets a
+    // row. The PassThrough is a real consumer now and buffers with backpressure until
+    // runImport's pipeline drains it.
+    const fileSource = new PassThrough();
+    source = fileSource;
+    fileStream.pipe(fileSource);
+    // pipe() does not forward errors; surface a truncated/aborted part to the COPY consumer
+    // so the import fails fast instead of stalling.
+    fileStream.on("error", (err) => fileSource.destroy(err));
+
     const mode = fields.mode === "upsert" ? "upsert" : "insert";
     const hasHeader = fields.hasHeader !== "false";
     const quarantine = fields.quarantine !== "false";
     const totalBytes = Number(req.headers["content-length"]) || undefined;
 
-    void createJob(info.filename ?? "upload.tsv", mode).then((job) => {
-      void runImport({
-        job,
-        openSource: () => fileStream,
-        totalBytes,
-        hasHeader,
-        mode,
-        quarantine,
+    createJob(info.filename ?? "upload.tsv", mode)
+      .then((job) => {
+        void runImport({
+          job,
+          openSource: () => fileSource,
+          totalBytes,
+          hasHeader,
+          mode,
+          quarantine,
+        });
+        res.status(202).json({ jobId: job.id });
+      })
+      .catch((err: unknown) => {
+        fileSource.destroy(err instanceof Error ? err : new Error(String(err)));
+        if (!res.headersSent) {
+          res.status(500).json({ error: "failed to start import" });
+        }
       });
-      res.status(202).json({ jobId: job.id });
-    });
+  });
+
+  bb.on("error", (err: unknown) => {
+    source?.destroy(err instanceof Error ? err : new Error(String(err)));
+    if (!res.headersSent) {
+      res.status(400).json({ error: "malformed upload" });
+    }
   });
 
   bb.on("close", () => {
     if (!handled && !res.headersSent) {
       res.status(400).json({ error: "no file part in upload" });
+    }
+  });
+
+  // Client disconnect mid-upload: tear the source down so the COPY pipeline errors out and
+  // runImport marks the job failed — instead of the request hanging and the import_jobs row
+  // sitting in 'running' forever (which previously needed a manual pg_terminate_backend).
+  req.on("close", () => {
+    if (!req.readableEnded && source && !source.destroyed) {
+      source.destroy(new Error("upload connection closed before completion"));
     }
   });
 

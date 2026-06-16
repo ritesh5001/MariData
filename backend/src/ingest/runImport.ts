@@ -34,6 +34,7 @@ export interface RunImportOptions {
 export async function runImport(opts: RunImportOptions): Promise<void> {
   const { job } = opts;
   const client = await pool.connect();
+  let failure: Error | undefined;
   try {
     // Load-only session tuning. synchronous_commit=off trades a tiny crash-durability
     // window for throughput; maintenance_work_mem speeds CREATE INDEX afterwards.
@@ -110,11 +111,13 @@ export async function runImport(opts: RunImportOptions): Promise<void> {
       rowsErrored,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    await failJob(job.id, message).catch(() => undefined);
-    emitProgress({ jobId: job.id, stage: "error", message });
+    failure = err instanceof Error ? err : new Error(String(err));
+    await failJob(job.id, failure.message).catch(() => undefined);
+    emitProgress({ jobId: job.id, stage: "error", message: failure.message });
   } finally {
-    client.release();
+    // Pass the error to release() so a connection left mid-COPY (aborted/stalled upload) is
+    // destroyed instead of returned to the pool in an unusable, half-COPY state.
+    client.release(failure);
     closeChannel(job.id);
   }
 }
