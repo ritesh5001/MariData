@@ -16,6 +16,7 @@ import {
   type ImportJob,
 } from "./jobTracker.js";
 import { emitProgress, closeChannel } from "./progress.js";
+import { explainImportError } from "./importError.js";
 
 export interface RunImportOptions {
   job: ImportJob;
@@ -112,8 +113,11 @@ export async function runImport(opts: RunImportOptions): Promise<void> {
     });
   } catch (err) {
     failure = err instanceof Error ? err : new Error(String(err));
-    await failJob(job.id, failure.message).catch(() => undefined);
-    emitProgress({ jobId: job.id, stage: "error", message: failure.message });
+    // Translate the raw COPY/transform error into a clear reason for the UI; the original
+    // message is kept on `failure` for logs / connection cleanup below.
+    const reason = explainImportError(err);
+    await failJob(job.id, reason).catch(() => undefined);
+    emitProgress({ jobId: job.id, stage: "error", message: reason });
   } finally {
     // Pass the error to release() so a connection left mid-COPY (aborted/stalled upload) is
     // destroyed instead of returned to the pool in an unusable, half-COPY state.

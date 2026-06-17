@@ -7,6 +7,7 @@ import { previewFile, previewSample } from "../ingest/preview.js";
 import { runImport } from "../ingest/runImport.js";
 import { createJob, getJob, listJobs } from "../ingest/jobTracker.js";
 import { subscribe, lastEvent } from "../ingest/progress.js";
+import { explainImportError } from "../ingest/importError.js";
 
 export const importRouter = Router();
 
@@ -136,7 +137,7 @@ async function startFromUpload(req: Request, res: Response): Promise<void> {
       .catch((err: unknown) => {
         fileSource.destroy(err instanceof Error ? err : new Error(String(err)));
         if (!res.headersSent) {
-          res.status(500).json({ error: "failed to start import" });
+          res.status(500).json({ error: explainImportError(err) });
         }
       });
   });
@@ -144,7 +145,11 @@ async function startFromUpload(req: Request, res: Response): Promise<void> {
   bb.on("error", (err: unknown) => {
     source?.destroy(err instanceof Error ? err : new Error(String(err)));
     if (!res.headersSent) {
-      res.status(400).json({ error: "malformed upload" });
+      res.status(400).json({
+        error: `The upload could not be read: ${
+          err instanceof Error ? err.message : String(err)
+        }. The file may be corrupted or the upload was cut off — try again.`,
+      });
     }
   });
 
