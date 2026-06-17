@@ -7,6 +7,7 @@ import {
   truncateStaging,
   countStaging,
   personsIsEmpty,
+  recordSkippedRows,
 } from "./transform.js";
 import { buildIndexesAndAnalyze } from "./indexAfterLoad.js";
 import {
@@ -47,17 +48,26 @@ export async function runImport(opts: RunImportOptions): Promise<void> {
     await truncateStaging(client);
     const wasEmpty = await personsIsEmpty(client);
 
-    const { malformedSkipped } = await copyIntoStaging(client, opts.openSource(), {
-      totalBytes: opts.totalBytes,
-      hasHeader: opts.hasHeader,
-      onProgress: (bytes, percent) =>
-        emitProgress({
-          jobId: job.id,
-          stage: "staging",
-          bytesProcessed: bytes,
-          percent,
-        }),
-    });
+    const { malformedSkipped, skippedRows } = await copyIntoStaging(
+      client,
+      opts.openSource(),
+      {
+        totalBytes: opts.totalBytes,
+        hasHeader: opts.hasHeader,
+        onProgress: (bytes, percent) =>
+          emitProgress({
+            jobId: job.id,
+            stage: "staging",
+            bytesProcessed: bytes,
+            percent,
+          }),
+      }
+    );
+    // Record the dropped rows (with their reasons) so the user can see exactly which lines
+    // were malformed and why — not just a count.
+    if (skippedRows.length > 0) {
+      await recordSkippedRows(client, job.id, skippedRows);
+    }
 
     const rowsStaged = await countStaging(client);
     emitProgress({ jobId: job.id, stage: "staging", percent: 100, rowsStaged });
@@ -96,12 +106,24 @@ export async function runImport(opts: RunImportOptions): Promise<void> {
     });
     await buildIndexesAndAnalyze(client);
 
-    await completeJob(job.id, {
-      rowsStaged,
-      rowsInserted,
-      rowsConflicted,
-      rowsErrored,
-    });
+    // Non-fatal warning: some rows in the file were too malformed to load and were skipped.
+    // Spell out how many and why, and point at the first few offending source lines.
+    let skippedNote: string | undefined;
+    if (malformedSkipped > 0) {
+      const lines = skippedRows.map((r) => r.line);
+      const shown = lines.slice(0, 10).join(", ");
+      const more = malformedSkipped > lines.length || lines.length > 10;
+      skippedNote =
+        `Imported successfully, but ${malformedSkipped} row(s) were skipped because they were ` +
+        `malformed (wrong number of columns — usually a stray tab or a line break inside a value). ` +
+        `Offending source line(s): ${shown}${more ? ", …" : ""}.`;
+    }
+
+    await completeJob(
+      job.id,
+      { rowsStaged, rowsInserted, rowsConflicted, rowsErrored },
+      skippedNote
+    );
     emitProgress({
       jobId: job.id,
       stage: "done",
@@ -110,10 +132,8 @@ export async function runImport(opts: RunImportOptions): Promise<void> {
       rowsInserted,
       rowsConflicted,
       rowsErrored,
-      message:
-        malformedSkipped > 0
-          ? `Done — skipped ${malformedSkipped} malformed row(s) in the file (wrong number of columns; see server log for the line numbers).`
-          : undefined,
+      rowsSkipped: malformedSkipped,
+      message: skippedNote,
     });
   } catch (err) {
     failure = err instanceof Error ? err : new Error(String(err));

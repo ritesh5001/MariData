@@ -34,6 +34,7 @@ export interface ProgressEvent {
   rowsInserted?: number;
   rowsConflicted?: number;
   rowsErrored?: number;
+  rowsSkipped?: number;
   message?: string;
 }
 

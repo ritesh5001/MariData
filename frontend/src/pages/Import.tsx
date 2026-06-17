@@ -368,12 +368,19 @@ function RunningStep(props: { jobId: number; onReset: () => void }) {
             : `${stage} — running set-based SQL, this can take a while on large loads`}
       </div>
 
+      {/* Hard failure: spell out exactly why the import could not complete. */}
+      {failed && <ErrorNote message={event?.message ?? "The import failed for an unknown reason."} />}
+
+      {/* Completed but some rows were dropped: show the reason as a non-fatal warning. */}
+      {finished && event?.message && <WarnNote message={event.message} />}
+
       {(event?.rowsStaged != null || finished) && (
-        <dl className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <dl className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
           <Stat label="Staged" value={event?.rowsStaged} />
           <Stat label="Inserted" value={event?.rowsInserted} />
           <Stat label="Conflicted" value={event?.rowsConflicted} />
           <Stat label="Errored" value={event?.rowsErrored} />
+          <Stat label="Skipped" value={event?.rowsSkipped} />
         </dl>
       )}
     </div>
@@ -438,18 +445,28 @@ function HistorySection() {
 }
 
 function StatusBadge({ job }: { job: ImportJob }) {
+  // A completed job can still carry a warning (e.g. some rows skipped) in error_message.
+  const completedWithWarning = job.status === "completed" && !!job.error_message;
   const cls =
-    job.status === "completed"
-      ? "bg-green-100 text-green-700"
-      : job.status === "failed"
-        ? "bg-red-100 text-red-700"
-        : "bg-accent/10 text-accent";
+    job.status === "failed"
+      ? "bg-red-100 text-red-700"
+      : completedWithWarning
+        ? "bg-amber-100 text-amber-700"
+        : job.status === "completed"
+          ? "bg-green-100 text-green-700"
+          : "bg-accent/10 text-accent";
+  const label =
+    job.status === "running"
+      ? (job.stage ?? "running")
+      : completedWithWarning
+        ? "completed ⚠"
+        : job.status;
   return (
     <span
-      className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${cls}`}
+      className={`cursor-help rounded-full px-2.5 py-0.5 text-xs font-medium ${cls}`}
       title={job.error_message ?? undefined}
     >
-      {job.status === "running" ? (job.stage ?? "running") : job.status}
+      {label}
     </span>
   );
 }
@@ -482,6 +499,12 @@ function PrimaryButton(props: {
 function ErrorNote({ message }: { message: string }) {
   return (
     <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{message}</p>
+  );
+}
+
+function WarnNote({ message }: { message: string }) {
+  return (
+    <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">{message}</p>
   );
 }
 

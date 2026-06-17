@@ -38,13 +38,16 @@ export async function completeJob(
     rowsInserted: number;
     rowsConflicted: number;
     rowsErrored: number;
-  }
+  },
+  // A non-fatal warning to persist even though the job succeeded (e.g. "skipped N malformed
+  // rows"). Stored in error_message so history can surface it; status stays 'completed'.
+  note?: string
 ): Promise<void> {
   await pool.query(
     `UPDATE import_jobs
        SET status = 'completed', stage = 'done',
            rows_staged = $2, rows_inserted = $3, rows_conflicted = $4, rows_errored = $5,
-           finished_at = now()
+           error_message = $6, finished_at = now()
      WHERE id = $1`,
     [
       id,
@@ -52,6 +55,7 @@ export async function completeJob(
       counts.rowsInserted,
       counts.rowsConflicted,
       counts.rowsErrored,
+      note ?? null,
     ]
   );
 }

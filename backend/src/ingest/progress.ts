@@ -14,6 +14,7 @@ export interface ProgressEvent {
   rowsInserted?: number;
   rowsConflicted?: number;
   rowsErrored?: number;
+  rowsSkipped?: number; // rows dropped before load because they were malformed
   message?: string;
 }
 

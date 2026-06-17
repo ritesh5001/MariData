@@ -22,10 +22,17 @@ import { StringDecoder } from "node:string_decoder";
 //                                    empty columns; pad it to N, emit, restart with this line
 //   - more than N fields          -> a stray tab we can't positionally place; skip + report
 
+export interface SkippedRow {
+  line: number; // 1-based physical line number in the source file
+  fields: number; // how many columns the row actually had
+  reason: string; // human-readable explanation of why it couldn't be loaded
+  sample: string; // first ~120 chars of the row, for identification
+}
+
 export interface NormalizeOptions {
   expectedFields: number;
-  // Called once per skipped (over-column) row so the caller can count/log it.
-  onSkip?: (info: { line: number; fields: number; sample: string }) => void;
+  // Called once per skipped (over-column) row so the caller can count/record it.
+  onSkip?: (info: SkippedRow) => void;
 }
 
 export class NormalizeTsvStream extends Transform {
@@ -127,6 +134,9 @@ export class NormalizeTsvStream extends Transform {
     this.opts.onSkip?.({
       line: this.physicalLine,
       fields: parts.length,
+      reason:
+        `the row has ${parts.length} columns but the schema expects ${this.opts.expectedFields} — ` +
+        `a stray tab or line break inside one of the values split it into too many fields`,
       sample: parts.join("\t").slice(0, 120),
     });
   }

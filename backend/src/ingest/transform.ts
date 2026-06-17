@@ -1,7 +1,25 @@
 import type { PoolClient } from "pg";
 import { COLUMN_MAP, QUARANTINE_CHECKS } from "./schema.js";
+import type { SkippedRow } from "./normalizeStream.js";
 
 const SAMPLE_ERRORS_PER_COLUMN = 500;
+
+// Persist rows that were dropped before COPY (malformed column counts) into import_errors so
+// they are reviewable alongside cast/quarantine errors. column_name carries a marker, raw_value
+// holds the source line number + reason + a sample of the row.
+export async function recordSkippedRows(
+  client: PoolClient,
+  jobId: number,
+  skipped: SkippedRow[]
+): Promise<void> {
+  for (const r of skipped) {
+    await client.query(
+      `INSERT INTO import_errors (job_id, external_id, column_name, raw_value)
+       VALUES ($1, NULL, '(malformed row)', $2)`,
+      [jobId, `source line ${r.line}: ${r.reason} | ${r.sample}`]
+    );
+  }
+}
 
 // Move staging -> persons in one set-based statement. Guarded cast helpers (maridata_to_*)
 // turn dirty values into NULL rather than aborting. Returns the number of rows inserted.

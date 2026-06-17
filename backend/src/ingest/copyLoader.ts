@@ -3,8 +3,12 @@ import type { Readable } from "node:stream";
 import type { PoolClient } from "pg";
 import { from as copyFrom } from "pg-copy-streams";
 import { CountingStream } from "./progress.js";
-import { NormalizeTsvStream } from "./normalizeStream.js";
+import { NormalizeTsvStream, type SkippedRow } from "./normalizeStream.js";
 import { STAGING_COLUMNS } from "./schema.js";
+
+// Keep at most this many skipped-row details (we still count every skip; we just cap the
+// per-row detail we hold/persist so a pathological file can't blow up memory).
+const MAX_SKIPPED_DETAILS = 200;
 
 // If no bytes reach COPY for this long, treat the upload as stalled (e.g. a half-open client
 // connection) and abort. Without this a stalled stream leaves `COPY ... FROM STDIN` parked
@@ -28,7 +32,7 @@ export async function copyIntoStaging(
     onProgress: (bytes: number, percent?: number) => void;
     idleTimeoutMs?: number;
   }
-): Promise<{ malformedSkipped: number }> {
+): Promise<{ malformedSkipped: number; skippedRows: SkippedRow[] }> {
   const headerClause = opts.hasHeader ? ", HEADER true" : "";
   const copyStream = client.query(
     copyFrom(
@@ -55,20 +59,21 @@ export async function copyIntoStaging(
 
   // Repair dirty rows (stray tabs / embedded newlines / short rows) BEFORE COPY so a handful
   // of bad lines can't abort the whole load. Sits after the byte counter so progress is
-  // measured against the real input size. Skipped (over-column) rows are reported via warn.
+  // measured against the real input size. Over-column rows that can't be repaired are
+  // collected (capped) and logged so the caller can report exactly why each was skipped.
+  const skippedRows: SkippedRow[] = [];
   const normalizer = new NormalizeTsvStream({
     expectedFields: STAGING_COLUMNS.length,
-    onSkip: ({ line, fields, sample }) =>
-      console.warn(
-        `[import] skipped malformed row at source line ${line}: ${fields} columns ` +
-          `(expected ${STAGING_COLUMNS.length}) — ${sample}`
-      ),
+    onSkip: (info) => {
+      if (skippedRows.length < MAX_SKIPPED_DETAILS) skippedRows.push(info);
+      console.warn(`[import] skipped source line ${info.line}: ${info.reason} — ${info.sample}`);
+    },
   });
 
   armIdle();
   try {
     await pipeline(source, counter, normalizer, copyStream);
-    return { malformedSkipped: normalizer.skipped };
+    return { malformedSkipped: normalizer.skipped, skippedRows };
   } finally {
     if (idleTimer) clearTimeout(idleTimer);
   }
