@@ -3,6 +3,8 @@ import type { Readable } from "node:stream";
 import type { PoolClient } from "pg";
 import { from as copyFrom } from "pg-copy-streams";
 import { CountingStream } from "./progress.js";
+import { NormalizeTsvStream } from "./normalizeStream.js";
+import { STAGING_COLUMNS } from "./schema.js";
 
 // If no bytes reach COPY for this long, treat the upload as stalled (e.g. a half-open client
 // connection) and abort. Without this a stalled stream leaves `COPY ... FROM STDIN` parked
@@ -26,7 +28,7 @@ export async function copyIntoStaging(
     onProgress: (bytes: number, percent?: number) => void;
     idleTimeoutMs?: number;
   }
-): Promise<void> {
+): Promise<{ malformedSkipped: number }> {
   const headerClause = opts.hasHeader ? ", HEADER true" : "";
   const copyStream = client.query(
     copyFrom(
@@ -51,9 +53,22 @@ export async function copyIntoStaging(
     opts.onProgress(bytes, percent);
   });
 
+  // Repair dirty rows (stray tabs / embedded newlines / short rows) BEFORE COPY so a handful
+  // of bad lines can't abort the whole load. Sits after the byte counter so progress is
+  // measured against the real input size. Skipped (over-column) rows are reported via warn.
+  const normalizer = new NormalizeTsvStream({
+    expectedFields: STAGING_COLUMNS.length,
+    onSkip: ({ line, fields, sample }) =>
+      console.warn(
+        `[import] skipped malformed row at source line ${line}: ${fields} columns ` +
+          `(expected ${STAGING_COLUMNS.length}) — ${sample}`
+      ),
+  });
+
   armIdle();
   try {
-    await pipeline(source, counter, copyStream);
+    await pipeline(source, counter, normalizer, copyStream);
+    return { malformedSkipped: normalizer.skipped };
   } finally {
     if (idleTimer) clearTimeout(idleTimer);
   }

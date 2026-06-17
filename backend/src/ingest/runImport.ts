@@ -47,7 +47,7 @@ export async function runImport(opts: RunImportOptions): Promise<void> {
     await truncateStaging(client);
     const wasEmpty = await personsIsEmpty(client);
 
-    await copyIntoStaging(client, opts.openSource(), {
+    const { malformedSkipped } = await copyIntoStaging(client, opts.openSource(), {
       totalBytes: opts.totalBytes,
       hasHeader: opts.hasHeader,
       onProgress: (bytes, percent) =>
@@ -110,6 +110,10 @@ export async function runImport(opts: RunImportOptions): Promise<void> {
       rowsInserted,
       rowsConflicted,
       rowsErrored,
+      message:
+        malformedSkipped > 0
+          ? `Done — skipped ${malformedSkipped} malformed row(s) in the file (wrong number of columns; see server log for the line numbers).`
+          : undefined,
     });
   } catch (err) {
     failure = err instanceof Error ? err : new Error(String(err));
