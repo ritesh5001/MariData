@@ -5,7 +5,8 @@ import path from "node:path";
 // Load the repo-root .env (one level above backend/) and any local backend/.env.
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, "../../.env") });
-dotenv.config({ path: path.resolve(here, "../.env") });
+// Local backend/.env overrides the repo-root .env so per-machine dev settings win.
+dotenv.config({ path: path.resolve(here, "../.env"), override: true });
 
 function required(name: string, fallback?: string): string {
   const v = process.env[name] ?? fallback;
