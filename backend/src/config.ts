@@ -31,4 +31,13 @@ export const config = {
   // ~12h sessions
   jwtTtlSeconds: 60 * 60 * 12,
   isProd: process.env.NODE_ENV === "production",
+  // Keys for the public, read-only /public/v1 API. One per consuming platform so each
+  // can be revoked independently. Comma-separated; empty means the public API is disabled.
+  apiKeys: (process.env.API_KEYS ?? "")
+    .split(",")
+    .map((k) => k.trim())
+    .filter(Boolean),
+  // Per-IP rate limit for the public API.
+  publicRateWindowMs: Number(process.env.PUBLIC_RATE_WINDOW_MS ?? 60_000),
+  publicRateMax: Number(process.env.PUBLIC_RATE_MAX ?? 60),
 };

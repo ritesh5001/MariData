@@ -113,7 +113,12 @@ export function buildListWhere(
   return { clause: parts.join(" AND "), values };
 }
 
-personsRouter.get("/persons", async (req: Request, res: Response) => {
+// Read-only list/search handler. Exported so both the cookie-protected admin router
+// and the key-protected public router can share one implementation.
+export async function listPersonsHandler(
+  req: Request,
+  res: Response
+): Promise<void> {
   const parsed = listSchema.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "bad query" });
@@ -178,9 +183,14 @@ personsRouter.get("/persons", async (req: Request, res: Response) => {
     }
     res.status(500).json({ error: (err as Error).message });
   }
-});
+}
+personsRouter.get("/persons", listPersonsHandler);
 
-personsRouter.get("/persons/:id", async (req: Request, res: Response) => {
+// Read-only single-record handler. Shared between admin and public routers.
+export async function getPersonHandler(
+  req: Request,
+  res: Response
+): Promise<void> {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
     res.status(400).json({ error: "invalid id" });
@@ -199,7 +209,8 @@ personsRouter.get("/persons/:id", async (req: Request, res: Response) => {
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
-});
+}
+personsRouter.get("/persons/:id", getPersonHandler);
 
 personsRouter.patch("/persons/:id", async (req: Request, res: Response) => {
   const id = Number(req.params.id);

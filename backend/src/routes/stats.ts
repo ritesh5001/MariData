@@ -29,7 +29,8 @@ async function topValues(column: string): Promise<{ value: string; count: number
   }
 }
 
-statsRouter.get("/stats", async (_req: Request, res: Response) => {
+// Read-only dashboard stats. Exported so the public router can reuse it.
+export async function statsHandler(_req: Request, res: Response): Promise<void> {
   try {
     const [estimate, size, countries, titles, jobs, segments] = await Promise.all([
       pool.query<{ n: number }>(
@@ -58,4 +59,5 @@ statsRouter.get("/stats", async (_req: Request, res: Response) => {
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
-});
+}
+statsRouter.get("/stats", statsHandler);

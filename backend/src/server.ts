@@ -13,15 +13,19 @@ import { dedupRouter } from "./routes/dedup.js";
 import { bulkRouter } from "./routes/bulk.js";
 import { exportRouter } from "./routes/export.js";
 import { statsRouter } from "./routes/stats.js";
+import { publicRouter, publicCors, publicRateLimit } from "./public/routes.js";
 
 const app = express();
 
-app.use(
-  cors({
-    origin: config.clientOrigin,
-    credentials: true,
-  })
-);
+// Behind the Cloudflare Tunnel there is exactly one proxy hop; trust it so req.ip and the
+// rate limiter see the real client IP from X-Forwarded-For (not the tunnel's address).
+app.set("trust proxy", 1);
+
+// Credentialed CORS for the cookie-authenticated admin surface (the Vite frontend).
+const adminCors = cors({
+  origin: config.clientOrigin,
+  credentials: true,
+});
 app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
 
@@ -35,11 +39,17 @@ app.get("/health", async (_req, res) => {
   }
 });
 
-app.use("/auth", authRouter);
+app.use("/auth", adminCors, authRouter);
+
+// Public, read-only API for third-party platforms. Authenticated by API key (not cookie),
+// so it gets its own permissive CORS and a per-IP rate limit. Read-only by construction —
+// only safe GET endpoints are mounted in publicRouter.
+app.use("/public/v1", publicCors, publicRateLimit, publicRouter);
 
 // Protected API surface. Feature routers (persons, import, segments, export, stats) mount
 // here in later phases; all inherit requireAuth.
 const api = express.Router();
+api.use(adminCors);
 api.use(requireAuth);
 api.get("/ping", (_req, res) => res.json({ pong: true }));
 api.use(importRouter);

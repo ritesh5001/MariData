@@ -60,7 +60,8 @@ async function facetQuery(
   }
 }
 
-facetsRouter.get("/facets", async (req: Request, res: Response) => {
+// Read-only facet counts. Exported so the public router can reuse it.
+export async function facetsHandler(req: Request, res: Response): Promise<void> {
   const parsed = facetsSchema.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({ error: "bad facets query" });
@@ -99,4 +100,5 @@ facetsRouter.get("/facets", async (req: Request, res: Response) => {
     }
     res.status(500).json({ error: (err as Error).message });
   }
-});
+}
+facetsRouter.get("/facets", facetsHandler);
